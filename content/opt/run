@@ -45,14 +45,15 @@ if [ ! -f "${initfile}" ]; then
    fi
    DATABASE_URL=${DATABASE_URL:-"jdbc:mysql://localhost/rundeckdb?autoReconnect=true"}
    RUNDECK_PASSWORD=${RUNDECK_PASSWORD:-$(pwgen -s 15 1)}
-   DEBIAN_SYS_MAINT_PASSWORD=${DEBIAN_SYS_MAINT_PASSWORD:-$(pwgen -s 15 1)}
+   DATABASE_ADMIN_PASSWORD=${DATABASE_ADMIN_PASSWORD:-${RUNDECK_PASSWORD}}
+   DATABASE_ADMIN_USER=${DATABASE_ADMIN_USER:-rundeck}
    RUNDECK_STORAGE_PROVIDER=${RUNDECK_STORAGE_PROVIDER:-"file"}
    RUNDECK_PROJECT_STORAGE_TYPE=${RUNDECK_PROJECT_STORAGE_TYPE:-"file"}
    NO_LOCAL_MYSQL=${NO_LOCAL_MYSQL:-"false"}
    LOGIN_MODULE=${LOGIN_MODULE:-"RDpropertyfilelogin"}
    JAAS_CONF_FILE=${JAAS_CONF_FILE:-"jaas-loginmodule.conf"}
    KEYSTORE_PASS=${KEYSTORE_PASS:-"adminadmin"}
-   TRUSTSTORE_PASS=${TRUSTSTORE_PASS:-"adminadmin"}
+   TRUSTSTORE_PASS=${TRUSTSTORE_PASS:-${KEYSTORE_PASS}}
 
    update_user_password () {
       (
@@ -80,7 +81,10 @@ if [ ! -f "${initfile}" ]; then
    if [ ! -f /etc/rundeck/ssl/truststore ]; then
        echo "=>Generating ssl cert"
        sudo -u rundeck mkdir -p /etc/rundeck/ssl
-       sudo -u rundeck keytool -keystore /etc/rundeck/ssl/keystore -alias rundeck -genkey -keyalg RSA -keypass adminadmin -storepass adminadmin -dname "cn=localhost, o=OME, c=DE" && \
+       if [ ! -f /etc/rundeck/ssl/keystore ]; then
+           sudo -u rundeck keytool -importkeystore -destkeystore /etc/rundeck/ssl/keystore -srckeystore /etc/ssl/certs/java/cacerts -deststoretype JKS -srcstoretype JKS -deststorepass ${TRUSTSTORE_PASS} -srcstorepass changeit -noprompt > /dev/null
+       fi
+       sudo -u rundeck keytool -keystore /etc/rundeck/ssl/keystore -alias rundeck -genkey -keyalg RSA -keypass ${KEYSTORE_PASS} -storepass ${TRUSTSTORE_PASS} -dname "cn=localhost, o=OME, c=DE"
        cp /etc/rundeck/ssl/keystore /etc/rundeck/ssl/truststore
    fi
 
@@ -91,19 +95,8 @@ if [ ! -f "${initfile}" ]; then
       else
          echo "=>MySQL datadir is empty...initializing"
          /usr/bin/mysql_install_db --user=mysql --basedir=/usr --datadir=/var/lib/mysql
-         echo "=>Starting MySQL...ignore warning about debian-sys-maint user, it will be granted permissions momentarily"
          /etc/init.d/mysql start
-         sleep 5
-         (
-         echo "GRANT ALL PRIVILEGES ON *.* TO 'debian-sys-maint'@'localhost' IDENTIFIED BY '${DEBIAN_SYS_MAINT_PASSWORD}';"
-         echo "quit"
-         ) |
-         mysql
      fi
-
-     # Set debian-sys-maint password
-     update_user_password debian-sys-maint ${DEBIAN_SYS_MAINT_PASSWORD}
-     sed -i 's,password\ \=\ .*,password\ \=\ '${DEBIAN_SYS_MAINT_PASSWORD}',g' /etc/mysql/debian.cnf
 
      (
      echo "CREATE DATABASE IF NOT EXISTS rundeckdb;"
@@ -132,7 +125,16 @@ if [ ! -f "${initfile}" ]; then
    else
       echo "dataSource.password = ${RUNDECK_PASSWORD}" >> /etc/rundeck/rundeck-config.properties
    fi
-
+   
+   # Check if we need to set the rundeck.gui.brand.html property
+   if [ -n "${GUI_BRAND_HTML}" ]; then
+      if grep -q rundeck.gui.brand.html /etc/rundeck/rundeck-config.properties ; then
+        sed -i 's/rundeck\.gui\.brand\.html.*$/rundeck\.gui\.brand\.html = '${GUI_BRAND_HTML}'/g' /etc/rundeck/rundeck-config.properties
+      else
+        echo "rundeck.gui.brand.html = ${GUI_BRAND_HTML}" >> /etc/rundeck/rundeck-config.properties
+      fi
+   fi
+   
    # framework.properties
    sed -i 's,framework.server.name\ \=.*,framework.server.name\ \=\ '${SERVER_HOSTNAME}',g' /etc/rundeck/framework.properties
    sed -i 's,framework.server.hostname\ \=.*,framework.server.hostname\ \=\ '${SERVER_HOSTNAME}',g' /etc/rundeck/framework.properties

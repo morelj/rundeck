@@ -5,7 +5,7 @@ This repository contains the source for the [Rundeck](http://rundeck.org/) [dock
 
 # Image details
 
-1. Based on debian:jessie
+1. Based on debian:stretch
 1. Supervisor, Apache2, and rundeck
 1. No SSH.  Use docker exec or [nsenter](https://github.com/jpetazzo/nsenter)
 1. If RUNDECK_PASSWORD is not supplied, it will be randomly generated and shown via stdout.
@@ -61,7 +61,9 @@ RUNDECK_STORAGE_PROVIDER - Options file (default) or db.  See: http://rundeck.or
 
 RUNDECK_PROJECT_STORAGE_TYPE - Options file (default) or db.  See: http://rundeck.org/docs/administration/setting-up-an-rdb-datasource.html
 
-DEBIAN_SYS_MAINT_PASSWORD
+GUI_BRAND_HTML - HTML to show as title in app header. See: http://rundeck.org/docs/administration/gui-customization.html. Useful to show Rundeck environment where multiple Rundeck instances are deployed, e.g. GUI_BRAND_HTML='<span class="title">QA Environment</span>'
+
+DEBIAN_SYS_MAINT_PASSWORD - No longer used as of Debian Stretch
 
 NO_LOCAL_MYSQL - false (default).  Set to true if using an external MySQL container or instance.  Make sure to set DATABASE_URL and RUNDECK_PASSWORD (used for JDBC connection to MySQL).  Further details for setting up MYSQL: http://rundeck.org/docs/administration/setting-up-an-rdb-datasource.html
 
