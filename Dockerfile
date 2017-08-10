@@ -46,6 +46,6 @@ RUN chmod u+x /opt/run && \
 
 EXPOSE 4440 4443
 
-VOLUME  ["/etc/rundeck", "/var/rundeck", "/var/lib/rundeck", "/var/lib/mysql", "/var/log/rundeck", "/opt/rundeck-plugins", "/var/lib/rundeck/logs", "/var/lib/rundeck/var/storage"]
+VOLUME  ["/etc/rundeck", "/var/rundeck", "/var/lib/rundeck/.ssh", "/var/lib/mysql", "/var/log/rundeck", "/opt/rundeck-plugins", "/var/lib/rundeck/logs", "/var/lib/rundeck/var/storage"]
 
 ENTRYPOINT ["/opt/run"]
