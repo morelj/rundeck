@@ -7,6 +7,7 @@ This repository contains the source for the [Rundeck](http://rundeck.org/) [dock
 
 1. Based on debian:stretch
 1. Supervisor, MariaDB, and rundeck
+1. It can take anywhere from 30 seconds to a few minutes for Rundeck to start depending on the available resources for the container (and host VM).
 1. No SSH.  Use docker exec or [nsenter](https://github.com/jpetazzo/nsenter)
 1. If RUNDECK_PASSWORD is not supplied, it will be randomly generated and shown via stdout.
 1. Supply the EXTERNAL_SERVER_URL or it will default to https://0.0.0.0:4443
@@ -38,7 +39,7 @@ To add (external) plugins, add the jars to the /opt/rundeck-plugins volume and t
 
 # Docker secrets
 Reference: https://docs.docker.com/engine/swarm/secrets/
-The entrypoint run script will check for docker secrets set for RUNDECK_PASSWORD, DATABASE_ADMIN_PASSWORD, KEYSTORE_PASS, and TRUSTSTORE_PASS.  If the secret has not been set, it will then check for the environment variable and finally default to generating a random value.
+The entrypoint run script will check for docker secrets set for RUNDECK_ADMIN_PASSWORD, RUNDECK_PASSWORD, DATABASE_ADMIN_PASSWORD, KEYSTORE_PASS, and TRUSTSTORE_PASS.  If the secret has not been set, it will then check for the environment variable and finally default to generating a random value.
 
 # Environment variables
 
@@ -49,7 +50,9 @@ EXTERNAL_SERVER_URL - Use this if you are running rundeck behind a proxy.  This 
 
 RDECK_JVM_SETTINGS - Additional parameters sent to the rundeck JVM (ex: -Xmx1024m -Xms256m -XX:MaxMetaspaceSize=256m -server -Dfile.encoding=UTF-8 -Dserver.web.context=/rundeck)
 
-DATABASE_URL - For use with (container) external database
+DATABASE_DRIVER - Supply the database driver classname if using a database besides MySQL/MariaDB or Postgres
+
+DATABASE_URL - For use with (container) external database (ex: jdbc:mysql://<HOSTNAME>:<PORT>/rundeckdb)
 
 RUNDECK_UID - The unix user ID to be used for the rundeck account when rundeck is booted.  This is useful for embedding this docker container into your development environment sharing files via docker volumes between the container and your host OS.  RUNDECK_GID also needs to be defined for this overload to take place.
 
@@ -108,13 +111,37 @@ sudo docker run -p 4440:4440 \
   -e EXTERNAL_SERVER_URL=http://MY.HOSTNAME.COM:4440 \
   -e HTTP_PROXY="http://WEBPROXY:PORT" \
   -e HTTPS_PROXY="http://WEBPROXY:PORT" \
-  -e RDECK_JVM="-Djava.net.useSystemProxies=true" \
+  -e RDECK_JVM_SETTINGS="-Djava.net.useSystemProxies=true" \
   --name rundeck -t jordan/rundeck:latest
 ```
+# External database instances
+The container starts it's own MySQL/MariaDB instance by default which can be used for Key Storage and/or
+Project Definition Storage. If you want use an external database, check the options below.
 
+OPTION 1: First time setup of external database, you must follow the steps below:
+- Create a user named *rundeck* in your external database
+- Set the following environment variables
+```
+NO_LOCAL_MYSQL=true
+RUNDECK_STORAGE_PROVIDER=<db_OR_file>
+RUNDECK_PROJECT_STORAGE_TYPE=<db_OR_file>
+DATABASE_URL=<MYSQL_OR_POSTGRES_JDBC_URL>
+DATABASE_ADMIN_USER=<DATABASE_ADMIN_USER>
+DATABASE_ADMIN_PASSWORD=<DATABASE_ADMIN_PASSWORD>
+RUNDECK_PASSWORD=<rundeck_DB_USER_PASSWORD>
+```
+
+OPTION 2: If external database is already setup, additionally set the following along with the environment variables 
+from OPTION 1:
+```
+SKIP_DATABASE_SETUP=true
+```
 
 # Using an SSL Terminated Proxy
 See: http://rundeck.org/docs/administration/configuring-ssl.html#using-an-ssl-terminated-proxy
 
 # Upgrading
 See: http://rundeck.org/docs/upgrading/index.html
+
+# Default credentials
+admin/admin

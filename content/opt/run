@@ -13,13 +13,11 @@ if [[ -n "${RUNDECK_GID}" && -n "${RUNDECK_UID}" ]]; then
 fi
 
 # chown directories and files that might be coming from volumes
-chown -R mysql:mysql /var/lib/mysql
-chown -R rundeck:rundeck /etc/rundeck
-chown -R rundeck:rundeck /var/rundeck
-chown -R rundeck:adm /var/log/rundeck
-chown -R rundeck:rundeck /var/lib/rundeck
-chown -R rundeck:rundeck /opt/rundeck-defaults
-chown -R rundeck:rundeck /tmp/rundeck
+find /var/lib/mysql \
+  \! -user mysql -exec chown -R mysql:mysql {} \;
+find /etc/rundeck /var/rundeck /var/log/rundeck \
+  /var/lib/rundeck /opt/rundeck-defaults /tmp/rundeck \
+  \! -user rundeck -exec chown -R rundeck:rundeck {} \;
 chmod -R 750 /tmp/rundeck
 
 # Plugins
@@ -56,8 +54,12 @@ if [ ! -f "${initfile}" ]; then
   if [ -f /run/secrets/TRUSTSTORE_PASS ]; then
     TRUSTSTORE_PASS=$(< /run/secrets/TRUSTSTORE_PASS)
   fi
+  if [ -f /run/secrets/RUNDECK_ADMIN_PASSWORD ]; then
+    RUNDECK_ADMIN_PASSWORD=$(< /run/secrets/RUNDECK_ADMIN_PASSWORD)
+  fi
 
    DATABASE_URL=${DATABASE_URL:-"jdbc:mysql://localhost/rundeckdb?autoReconnect=true"}
+   DATABASE_DRIVER=${DATABASE_DRIVER:-"com.mysql.jdbc.Driver"}
    RUNDECK_PASSWORD=${RUNDECK_PASSWORD:-$(pwgen -s 15 1)}
    DATABASE_ADMIN_PASSWORD=${DATABASE_ADMIN_PASSWORD:-${RUNDECK_PASSWORD}}
    DATABASE_ADMIN_USER=${DATABASE_ADMIN_USER:-rundeck}
@@ -69,6 +71,7 @@ if [ ! -f "${initfile}" ]; then
    JAAS_CONF_FILE=${JAAS_CONF_FILE:-"jaas-loginmodule.conf"}
    KEYSTORE_PASS=${KEYSTORE_PASS:-"adminadmin"}
    TRUSTSTORE_PASS=${TRUSTSTORE_PASS:-${KEYSTORE_PASS}}
+   CLUSTER_MODE=${CLUSTER_MODE:-"false"}
 
    update_user_password () {
       (
@@ -133,15 +136,20 @@ if [ ! -f "${initfile}" ]; then
 
    sed -i 's,dataSource.dbCreate.*,,g' /etc/rundeck/rundeck-config.properties
    sed -i 's,dataSource.url = .*,dataSource.url = '${DATABASE_URL}',g' /etc/rundeck/rundeck-config.properties
+   if grep -q dataSource.driverClassName /etc/rundeck/rundeck-config.properties ; then
+      sed -i 's,dataSource.driverClassName = .*,dataSource.driverClassName = '${DATABASE_DRIVER}',g' /etc/rundeck/rundeck-config.properties
+   else
+      echo -e "\ndataSource.driverClassName = ${DATABASE_DRIVER}" >> /etc/rundeck/rundeck-config.properties
+   fi
    if grep -q dataSource.username /etc/rundeck/rundeck-config.properties ; then
       :
    else
-      echo "dataSource.username = rundeck" >> /etc/rundeck/rundeck-config.properties
+      echo -e "\ndataSource.username = rundeck" >> /etc/rundeck/rundeck-config.properties
    fi
    if grep -q dataSource.password /etc/rundeck/rundeck-config.properties ; then
       sed -i 's,dataSource.password = .*,dataSource.password = '${RUNDECK_PASSWORD}',g' /etc/rundeck/rundeck-config.properties
    else
-      echo "dataSource.password = ${RUNDECK_PASSWORD}" >> /etc/rundeck/rundeck-config.properties
+      echo -e "\ndataSource.password = ${RUNDECK_PASSWORD}" >> /etc/rundeck/rundeck-config.properties
    fi
 
    # Check if we need to set the rundeck.gui.brand.html property
@@ -224,12 +232,29 @@ if [ ! -f "${initfile}" ]; then
    fi
 
    if [ "${RUNDECK_STORAGE_PROVIDER}" == "db" ]; then
-      echo "rundeck.storage.provider.1.type=db" >> /etc/rundeck/rundeck-config.properties
-      echo "rundeck.storage.provider.1.path=/" >> /etc/rundeck/rundeck-config.properties
+      if grep -q rundeck.storage.provider.1.type /etc/rundeck/rundeck-config.properties ; then
+        sed -i 's/rundeck\.storage\.provider\.1\.type.*$/rundeck\.storage\.provider\.1\.type='${RUNDECK_STORAGE_PROVIDER}'/g' /etc/rundeck/rundeck-config.properties
+      else
+        echo "rundeck.storage.provider.1.type=db" >> /etc/rundeck/rundeck-config.properties
+      fi
+      if grep -q rundeck.storage.provider.1.path /etc/rundeck/rundeck-config.properties ; then
+        :
+      else
+        echo "rundeck.storage.provider.1.path=/" >> /etc/rundeck/rundeck-config.properties
+      fi
    fi
 
    if [ "${RUNDECK_PROJECT_STORAGE_TYPE}" == "db" ]; then
-      echo "rundeck.projectsStorageType=db" >> /etc/rundeck/rundeck-config.properties
+      if grep -q rundeck.projectsStorageType /etc/rundeck/rundeck-config.properties ; then
+        sed -i 's/rundeck\.projectsStorageType.*$/rundeck\.projectsStorageType='${RUNDECK_PROJECT_STORAGE_TYPE}'/g' /etc/rundeck/rundeck-config.properties
+      else
+        echo "rundeck.projectsStorageType=db" >> /etc/rundeck/rundeck-config.properties
+      fi
+   fi
+
+   if [ "${CLUSTER_MODE}" == "true" ]; then
+      echo "rundeck.clusterMode.enabled=true" >> /etc/rundeck/rundeck-config.properties
+    sed -i 's,rundeck.server.uuid \=.*,rundeck.server.uuid \= '$(uuidgen)',g' /etc/rundeck/framework.properties
    fi
 
    sed -i 's,JAAS_CONF\=.*,JAAS_CONF\="/etc/rundeck/'${JAAS_CONF_FILE}'",' /etc/rundeck/profile
@@ -250,11 +275,24 @@ if [ ! -f "${initfile}" ]; then
    echo "Rundeck Storage provider set to ${RUNDECK_STORAGE_PROVIDER}"
    echo "Rundeck public key:"
    cat /var/lib/rundeck/.ssh/id_rsa.pub
-   echo "Server URL set to ${SERVER_URL}"
+   if ! [ -z "${EXTERNAL_SERVER_URL}" ]; then
+      echo "Server URL set to ${EXTERNAL_SERVER_URL}"
+   else
+      echo "Server URL set to ${SERVER_URL}"
+   fi
+   
    echo "==================================================================="
 
    touch ${initfile}
 fi
 
-echo "Starting Supervisor.  You can safely CTRL-C and the container will continue to run with or without the -d (daemon) option"
-/usr/bin/supervisord -c /etc/supervisor/conf.d/rundeck.conf >> /dev/null
+echo -e "\n"
+echo "Starting Supervisor..."
+echo "It can take anywhere from 30 seconds up to a few minutes for the UI"
+echo "to become available depending on your container/host VM resources."
+echo "All further output is stdout/stderr from the supervisor process."
+echo -e "\n"
+
+/usr/bin/supervisord -c /etc/supervisor/supervisord.conf -n &
+trap "supervisorctl shutdown && wait" SIGTERM
+wait
