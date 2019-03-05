@@ -68,7 +68,9 @@ RUNDECK_STORAGE_PROVIDER - Options file (default) or db.  See: http://rundeck.or
 
 RUNDECK_PROJECT_STORAGE_TYPE - Options file (default) or db.  See: http://rundeck.org/docs/administration/setting-up-an-rdb-datasource.html
 
-GUI_BRAND_HTML - HTML to show as title in app header. See: http://rundeck.org/docs/administration/gui-customization.html. Useful to show Rundeck environment where multiple Rundeck instances are deployed, e.g. GUI_BRAND_HTML='<span class="title">QA Environment</span>'
+RUNDECK_THREAD_COUNT = Number of threads that are available for concurrent execution of jobs. see: http://www.quartz-scheduler.org/documentation/quartz-2.x/configuration/ConfigThreadPool.html
+
+GUI_BRAND_HTML - HTML to show as title in app header. See: https://rundeck.org/docs/administration/configuration/gui-customization.html. Useful to show Rundeck environment where multiple Rundeck instances are deployed, e.g. GUI_BRAND_HTML='<span class="title">QA Environment</span>'
 
 SMTP_HOST - The SMTP server host to use for email notifications.
 
@@ -95,6 +97,7 @@ SKIP_DATABASE_SETUP - Set to true if database is already setup and/or database a
 
 ```
 /etc/rundeck
+/etc/locale.gen - In format of the well known locale.gen file. All locales listed in this file will get generated.
 /var/rundeck
 /var/lib/rundeck - Not recommended to use as a volume as it contains webapp.  For SSH key you can use the this volume: /var/lib/rundeck/.ssh
 /var/lib/mysql
@@ -131,7 +134,7 @@ DATABASE_ADMIN_PASSWORD=<DATABASE_ADMIN_PASSWORD>
 RUNDECK_PASSWORD=<rundeck_DB_USER_PASSWORD>
 ```
 
-OPTION 2: If external database is already setup, additionally set the following along with the environment variables 
+OPTION 2: If external database is already setup, additionally set the following along with the environment variables
 from OPTION 1:
 ```
 SKIP_DATABASE_SETUP=true
